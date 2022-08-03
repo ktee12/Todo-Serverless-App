@@ -1,6 +1,5 @@
-import { APIGatewayAuthorizerEvent, CustomAuthorizerResult } from 'aws-lambda'
+import { CustomAuthorizerEvent, CustomAuthorizerResult } from 'aws-lambda'
 import 'source-map-support/register'
-
 import { verify } from 'jsonwebtoken'
 import { createLogger } from '../../utils/logger'
 import Axios from 'axios'
@@ -8,18 +7,17 @@ import { JwtPayload } from '../../auth/JwtPayload'
 
 // Edited below
 const logger = createLogger('auth')
-let cachedCert: string
 
 // TODO: Provide a URL that can be used to download a certificate that can be used
-// to verify JWT token signature.
-// To get this URL you need to go to an Auth0 page -> Show Advanced Settings -> Endpoints -> JSON Web Key Set
 const jwksUrl = 'https://dev-xacoqnyi.us.auth0.com/.well-known/jwks.json'
 
-export const handler = async (event: APIGatewayAuthorizerEvent): Promise<CustomAuthorizerResult> => {
-  logger.info('Authorizing a user', event.type)
+export const handler = async (event: CustomAuthorizerEvent): Promise<CustomAuthorizerResult> => {
+  logger.info('Authorizing a user', event.authorizationToken)
 
   try {
-    const jwtToken = await verifyToken(event)
+
+    const jwtToken = await verifyToken(event.authorizationToken)
+
     logger.info('User was authorized', jwtToken)
 
     return {
@@ -36,6 +34,7 @@ export const handler = async (event: APIGatewayAuthorizerEvent): Promise<CustomA
       }
     }
   } catch (e) {
+
     logger.error('User not authorized', { error: e.message })
 
     return {
@@ -54,20 +53,23 @@ export const handler = async (event: APIGatewayAuthorizerEvent): Promise<CustomA
   }
 }
 
-async function verifyToken(event: APIGatewayAuthorizerEvent): Promise<JwtPayload> {
-  const token = getToken(event)
-  const cert = await getCert()
+async function verifyToken(authHeader: string): Promise<JwtPayload> {
+  try {
 
-  logger.info(`Verifying token ${token}`)
+    const token = getToken(authHeader)
+    const res = await Axios.get(jwksUrl);
 
-  return verify(token, cert, { algorithms: ['RS256'] }) as JwtPayload
+    // You can read more about how to do this here: https://auth0.com/blog/navigating-rs256-and-jwks/
+    const pemData = res['data']['keys'][0]['x5c'][0]
+    const cert = `-----BEGIN CERTIFICATE-----\n${pemData}\n-----END CERTIFICATE-----`
+
+    return verify(token, cert, { algorithms: ['RS256'] }) as JwtPayload
+  } catch(err){
+    logger.error('Fail to authenticate', err)
+  }
 }
 
-function getToken(event: APIGatewayAuthorizerEvent): string {
-  if (!event.type || event.type !== 'TOKEN')
-    throw new Error('Expected "event.type" parameter to have value "TOKEN"');
-
-  const authHeader = event.authorizationToken;
+function getToken(authHeader: string): string {
   if (!authHeader) throw new Error('No authentication header')
 
   if (!authHeader.toLowerCase().startsWith('bearer '))
@@ -77,44 +79,4 @@ function getToken(event: APIGatewayAuthorizerEvent): string {
   const token = split[1]
 
   return token
-}
-
-async function getCert(): Promise<string> {
-  if (cachedCert) return cachedCert
-
-  logger.info(`Fetching certificate from ${jwksUrl}`)
-
-  const res = await Axios.get(jwksUrl)
-  const keys = res.data.keys
-
-  if (!keys || !keys.length)
-    throw new Error('No JWKS keys found!')
-
-  const signingKeys = keys.filter(
-    key => key.use === 'sig'
-      && key.kty === 'RSA'
-      && key.alg === 'RS256'
-      && key.n
-      && key.e
-      && key.kid
-      && (key.x5c && key.x5c.length)
-  )
-
-  if (!signingKeys.length)
-    throw new Error('No JWKS signing keys found!')
-
-  const key = signingKeys[0]
-  const publicKey = key.x5c[0]
-
-  cachedCert = createCert(publicKey)
-
-  logger.info('Valid certificate found', cachedCert)
-
-  return cachedCert
-}
-
-function createCert(cert: string): string {
-  cert = cert.match(/.{1,64}/g).join('\n')
-  cert = `-----BEGIN CERTIFICATE-----\n${cert}\n-----END CERTIFICATE-----\n`
-  return cert
 }

@@ -1,26 +1,24 @@
 import 'source-map-support/register'
 
-import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda'
-import { getAllTodoItems } from '../../businessLogic/todos'
-import { getUserId } from '../utils';
-import { createLogger } from '../../utils/logger'
+import {APIGatewayProxyEvent, APIGatewayProxyResult, APIGatewayProxyHandler} from 'aws-lambda';
+import {getAllToDo} from "../../businessLogic/ToDo";
 
-const logger = createLogger('getTodos')
+export const handler: APIGatewayProxyHandler = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
+    // TODO: Get all TODO items for a current user
+    console.log("Processing Event ", event);
+    const authorization = event.headers.Authorization;
+    const split = authorization.split(' ');
+    const jwtToken = split[1];
 
-// TODO: Get all TODO items for a current user
-export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
-  logger.info('Getting user todos: ', event)
+    const toDos = await getAllToDo(jwtToken);
 
-  const userId = getUserId(event)
-  const items = await getAllTodoItems(userId)
-
-  return {
-    statusCode: 200,
-    headers: {
-      'Access-Control-Allow-Origin': '*'
-    },
-    body: JSON.stringify({
-      items
-    })
-  }
-}
+    return {
+        statusCode: 200,
+        headers: {
+            "Access-Control-Allow-Origin": "*",
+        },
+        body: JSON.stringify({
+            "items": toDos,
+        }),
+    }
+};

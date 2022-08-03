@@ -1,26 +1,24 @@
 import 'source-map-support/register'
-import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda'
-import { deleteTodo } from '../../businessLogic/todos'
-import { getUserId } from '../utils'
-import { createLogger } from '../../utils/logger'
 
-const logger = createLogger('deleteTodo')
+import {APIGatewayProxyEvent, APIGatewayProxyResult, APIGatewayProxyHandler} from 'aws-lambda';
+import {deleteToDo} from "../../businessLogic/ToDo";
 
-export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
-  logger.info('Deleting todo item: ', { event })
+export const handler: APIGatewayProxyHandler = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
+    // TODO: Remove a TODO item by id
+    console.log("Processing Event ", event);
+    const authorization = event.headers.Authorization;
+    const split = authorization.split(' ');
+    const jwtToken = split[1];
 
-  const userId = getUserId(event)
-  const todoId = event.pathParameters.todoId
+    const todoId = event.pathParameters.todoId;
 
-  await deleteTodo(userId, todoId)
+    const deleteData = await deleteToDo(todoId, jwtToken);
 
-  return {
-    statusCode: 204,
-    headers: {
-      'Access-Control-Allow-Origin': '*'
-    },
-    body: JSON.stringify({
-      message: `Todo item ${todoId} was deleted successfully!`
-    })
-  }
-}
+    return {
+        statusCode: 200,
+        headers: {
+            "Access-Control-Allow-Origin": "*",
+        },
+        body: deleteData,
+    }
+};
